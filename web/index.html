@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1f6feb">
+<title>Office Print</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--text:#1b2230;--muted:#667085;--line:#e3e8ef;--accent:#1f6feb;--accent-ink:#fff;--ok:#157f3b;--bad:#c62828;--warn:#b26a00}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#18202f;--text:#e8ecf4;--muted:#93a0b8;--line:#2a3448;--accent:#4c8dff;--accent-ink:#06142e;--ok:#4cc27a;--bad:#ff7b72;--warn:#e3a008}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+main{max-width:520px;margin:0 auto}
+h1{font-size:1.35rem;margin:8px 0 2px}
+.sub{color:var(--muted);font-size:.9rem;margin-bottom:16px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.pick{display:block;text-align:center;border:2px dashed var(--line);border-radius:12px;padding:26px 12px;cursor:pointer;color:var(--muted)}
+.pick b{display:block;color:var(--text);font-size:1.05rem;margin-bottom:2px}
+input[type=file]{display:none}
+.files{list-style:none;margin:12px 0 0;padding:0}
+.files li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:.92rem}
+.files .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files button{background:none;border:0;color:var(--bad);font-size:1.1rem;cursor:pointer}
+.row{display:flex;gap:12px}.row>div{flex:1}
+label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px}
+input[type=number],input[type=text],input[type=password],select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:1rem}
+.btn{width:100%;padding:15px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-size:1.05rem;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.45;cursor:default}
+.jobs{list-style:none;margin:0;padding:0}
+.jobs li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:.92rem}
+.jobs li:first-child{border-top:0}
+.st{white-space:nowrap;font-size:.85rem}
+.st.done{color:var(--ok)}.st.error{color:var(--bad)}.st.queued,.st.converting,.st.printing{color:var(--warn)}
+.err{color:var(--bad);font-size:.9rem;margin-top:8px}
+.peers a{display:inline-block;margin:4px 8px 0 0;color:var(--accent);text-decoration:none;font-size:.92rem}
+h2{font-size:.95rem;margin:0 0 8px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Office Print</h1>
+  <div class="sub"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+
+  <div class="card hide" id="pinCard">
+    <label for="pin">Enter the office print PIN</label>
+    <input type="password" id="pin" inputmode="numeric" autocomplete="off">
+    <div class="err" id="pinErr"></div>
+    <div style="height:10px"></div>
+    <button class="btn" id="pinBtn">Continue</button>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="card">
+      <label class="pick" for="file"><b>Choose files</b>PDF, Word, Excel, PowerPoint or photos</label>
+      <input type="file" id="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.rtf,.odt,image/*">
+      <ul class="files" id="files"></ul>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div><label for="copies">Copies</label><input type="number" id="copies" min="1" max="99" value="1" inputmode="numeric"></div>
+        <div><label for="color">Colour</label><select id="color"><option value="bw">Black &amp; white</option><option value="color">Colour</option></select></div>
+      </div>
+      <div style="height:12px"></div>
+      <label for="pages">Pages (optional, e.g. 1-3,5)</label>
+      <input type="text" id="pages" placeholder="All pages" inputmode="text">
+      <div class="err" id="err"></div>
+    </div>
+
+    <button class="btn" id="go" disabled>Print</button>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Recent prints</h2>
+      <ul class="jobs" id="jobs"><li style="color:var(--muted)">Nothing yet</li></ul>
+    </div>
+
+    <div class="card hide" id="peerCard"><h2>Other printers</h2><div class="peers" id="peers"></div></div>
+  </div>
+</main>
+<script>
+(function(){
+  var $=function(i){return document.getElementById(i)};
+  var pin=''; try{pin=localStorage.getItem('pin')||''}catch(e){}
+  var files=[], busy=false;
+
+  function api(path,opt){
+    opt=opt||{}; opt.headers=opt.headers||{}; opt.headers['X-Pin']=pin;
+    return fetch(path,opt).then(function(r){
+      return r.json().catch(function(){return {}}).then(function(j){ if(!r.ok){var e=new Error(j.error||'Error'); e.code=r.status; throw e;} return j; });
+    });
+  }
+
+  function showApp(){ $('pinCard').classList.add('hide'); $('app').classList.remove('hide'); poll(); }
+
+  function init(){
+    fetch('/api/info').then(function(r){return r.json()}).then(function(i){
+      $('title').textContent=i.title; document.title=i.title;
+      var ok=i.status==='Ready';
+      $('status').textContent=i.printer+' · '+i.status;
+      $('dot').className='dot '+(ok?'ok':'bad');
+      if(i.peers&&i.peers.length){
+        $('peerCard').classList.remove('hide');
+        i.peers.forEach(function(p){var a=document.createElement('a');a.href=p.url;a.textContent=p.name;$('peers').appendChild(a);});
+      }
+      if(i.pinRequired){
+        api('/api/jobs').then(showApp).catch(function(){ $('pinCard').classList.remove('hide'); });
+      } else showApp();
+    }).catch(function(){ $('status').textContent='Cannot reach the print station. Is the PC on?'; $('dot').className='dot bad'; });
+  }
+
+  $('pinBtn').onclick=function(){
+    pin=$('pin').value;
+    api('/api/jobs').then(function(){ try{localStorage.setItem('pin',pin)}catch(e){} showApp(); })
+      .catch(function(){ $('pinErr').textContent='Wrong PIN'; });
+  };
+
+  function renderFiles(){
+    var ul=$('files'); ul.innerHTML='';
+    files.forEach(function(f,idx){
+      var li=document.createElement('li');
+      var n=document.createElement('span'); n.className='n'; n.textContent=f.name;
+      var x=document.createElement('button'); x.textContent='✕'; x.setAttribute('aria-label','Remove');
+      x.onclick=function(){files.splice(idx,1);renderFiles();};
+      li.appendChild(n); li.appendChild(x); ul.appendChild(li);
+    });
+    $('go').disabled=busy||!files.length;
+  }
+
+  $('file').onchange=function(e){
+    for(var i=0;i<e.target.files.length;i++) files.push(e.target.files[i]);
+    e.target.value=''; renderFiles();
+  };
+
+  function upload(f){
+    var fd=new FormData();
+    fd.append('copies',$('copies').value||'1');
+    fd.append('color',$('color').value);
+    fd.append('pages',$('pages').value);
+    fd.append('file',f,f.name);
+    return api('/api/print',{method:'POST',body:fd});
+  }
+
+  $('go').onclick=function(){
+    $('err').textContent=''; busy=true; $('go').disabled=true; $('go').textContent='Sending…';
+    var list=files.slice(), chain=Promise.resolve();
+    list.forEach(function(f){
+      chain=chain.then(function(){return upload(f)}).then(function(){ files.shift(); renderFiles(); });
+    });
+    chain.catch(function(e){ $('err').textContent=e.message; })
+      .then(function(){ busy=false; $('go').textContent='Print'; renderFiles(); poll(); });
+  };
+
+  var labels={queued:'Waiting',converting:'Preparing',printing:'Printing…',done:'Printed ✓',error:'Failed'};
+  function poll(){
+    api('/api/jobs').then(function(list){
+      var ul=$('jobs'); ul.innerHTML='';
+      if(!list.length){ul.innerHTML='<li style="color:var(--muted)">Nothing yet</li>';}
+      list.forEach(function(j){
+        var li=document.createElement('li');
+        var n=document.createElement('span'); n.className='n'; n.textContent=j.name;
+        var s=document.createElement('span'); s.className='st '+j.status; s.textContent=labels[j.status]||j.status;
+        if(j.status==='error'&&j.message) li.title=j.message;
+        li.appendChild(n); li.appendChild(s);
+        if(j.status==='error'&&j.message){ var m=document.createElement('div'); m.className='err'; m.textContent=j.message; var w=document.createElement('div'); w.style.flex='1'; w.appendChild(li); /* keep simple */ }
+        ul.appendChild(li);
+        if(j.status==='error'&&j.message){ var d=document.createElement('li'); d.style.display='block'; d.innerHTML=''; var e=document.createElement('div'); e.className='err'; e.style.marginTop='0'; e.textContent=j.message; d.appendChild(e); d.style.borderTop='0'; d.style.paddingTop='0'; ul.appendChild(d); }
+      });
+    }).catch(function(){});
+  }
+  setInterval(function(){ if(!$('app').classList.contains('hide')) poll(); },2000);
+  init();
+})();
+</script>
+</body>
+</html>

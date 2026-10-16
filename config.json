@@ -1,0 +1,9 @@
+{
+  "title": "Office Printer 1",
+  "printer": "",
+  "port": 8080,
+  "pin": "",
+  "maxMb": 50,
+  "dryRun": false,
+  "peers": []
+}

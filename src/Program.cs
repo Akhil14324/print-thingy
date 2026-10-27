@@ -241,7 +241,7 @@ namespace PrintStation
 
             if (fileData == null || fileData.Length == 0 || string.IsNullOrEmpty(fileName)) { SendJson(ctx, 400, Err("No file received")); return; }
             string ext = Path.GetExtension(fileName).ToLowerInvariant();
-            if (!Direct.Contains(ext) && !Office.Contains(ext)) { SendJson(ctx, 400, Err("File type " + ext + " is not supported. Use PDF, Word, Excel, PowerPoint or a photo.")); return; }
+            if (!Direct.Contains(ext)) { SendJson(ctx, 400, Err("File type " + ext + " is not supported. Use a PDF or a photo.")); return; }
 
             int copies = 1;
             string cs; if (fields.TryGetValue("copies", out cs)) int.TryParse(cs, out copies);

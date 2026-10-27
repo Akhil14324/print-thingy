@@ -12,18 +12,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Edit these to match your PCs. "printer" is matched against installed printer names
-          # (a part of the name is enough). peerUrl links each page to the other printer's page.
-          - name: PC1
-            title: "Printer 1 - HP LaserJet Pro MFP M126a"
-            printer: "M126"
-            peerName: "Printer 2 - M1005"
-            peerUrl: "http://PC2-NAME-OR-IP:8080"
-          - name: PC2
-            title: "Printer 2 - HP LaserJet M1005 MFP"
-            printer: "M1005"
-            peerName: "Printer 1 - M126a"
-            peerUrl: "http://PC1-NAME-OR-IP:8080"
+          # "title" is the heading on the phone page. "printer" is matched against the installed
+          # printer name (a part of the name is enough); leave it "" to use the PC's default printer.
+          - name: Printer
+            title: "Office Printer"
+            printer: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -42,8 +35,7 @@ jobs:
           -Name "${{ matrix.name }}"
           -Title "${{ matrix.title }}"
           -Printer "${{ matrix.printer }}"
-          -PeerName "${{ matrix.peerName }}"
-          -PeerUrl "${{ matrix.peerUrl }}"
+          -Pin "${{ secrets.PRINT_PIN }}"
 
       - uses: actions/upload-artifact@v4
         with:

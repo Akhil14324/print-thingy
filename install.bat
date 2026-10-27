@@ -3,7 +3,7 @@ setlocal
 net session >nul 2>&1
 if errorlevel 1 (
   echo Asking for administrator permission...
-  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -Wait"
   exit /b
 )
 set DEST=C:\PrintStation

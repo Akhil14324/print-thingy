@@ -154,7 +154,7 @@ h2{font-size:.95rem;margin:0 0 8px}
       .then(function(){ busy=false; $('go').textContent='Print'; renderFiles(); poll(); });
   };
 
-  var labels={queued:'Waiting',converting:'Preparing',printing:'Printing…',done:'Printed ✓',error:'Failed'};
+  var labels={queued:'Waiting',converting:'Preparing',printing:'Printing…',waiting:'Waiting for printer',done:'Printed ✓',error:'Failed'};
   function poll(){
     api('/api/jobs').then(function(list){
       var ul=$('jobs'); ul.innerHTML='';

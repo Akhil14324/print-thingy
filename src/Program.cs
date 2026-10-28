@@ -396,11 +396,77 @@ namespace PrintStation
             ProcessStartInfo psi = new ProcessStartInfo(exe,
                 "-print-to \"" + PrinterName + "\" -print-settings \"" + string.Join(",", s.ToArray()) + "\" -silent -exit-when-done \"" + file + "\"");
             psi.CreateNoWindow = true; psi.UseShellExecute = false;
-            using (Process p = Process.Start(psi))
+            // Send the file again if the hand-off to SumatraPDF fails or the job never shows up in the queue
+            // (printer briefly off, spooler busy). A job that is already queued is never sent twice.
+            for (int attempt = 1; ; attempt++)
             {
-                if (!p.WaitForExit(180000)) { try { p.Kill(); } catch { } throw new Exception("Printing timed out"); }
-                if (p.ExitCode != 0) throw new Exception("Print tool failed (code " + p.ExitCode + "). Is the printer on?");
+                string err = null;
+                try
+                {
+                    using (Process p = Process.Start(psi))
+                    {
+                        if (!p.WaitForExit(180000)) { try { p.Kill(); } catch { } throw new Exception("Printing timed out"); }
+                        if (p.ExitCode != 0) err = "Print tool failed (code " + p.ExitCode + "). Is the printer on?";
+                    }
+                }
+                catch (Exception ex) { err = ex.Message; }
+                if (err == null && WaitForQueue(job, file)) return;
+                if (attempt >= 5) throw new Exception(err ?? "The job never reached the printer's queue. Check the printer is on and connected.");
+                Log("Retrying #" + job.Id + " (attempt " + attempt + "): " + (err ?? "not in the print queue"));
+                Set(job, "printing", "");
+                Thread.Sleep(10000);
             }
+        }
+
+        // SumatraPDF exiting with code 0 only means Windows accepted the file into the print queue.
+        // Returns true once the job has left the queue, false if it never showed up there (caller sends it again).
+        // A job held up by the printer itself (offline, out of paper) is kept waiting, not failed: Windows keeps it
+        // and prints when the printer recovers. Only a job stuck in some other state for 10 minutes fails.
+        static bool WaitForQueue(Job job, string file)
+        {
+            string key = Path.GetFileNameWithoutExtension(file); // random GUID name, unique per job
+            DateTime start = DateTime.Now;
+            DateTime changed = DateTime.Now;
+            bool seen = false;
+            string state = "", lastState = "";
+            while (true)
+            {
+                bool found = false;
+                using (ManagementObjectSearcher s = new ManagementObjectSearcher("SELECT Document, JobStatus, Status FROM Win32_PrintJob"))
+                {
+                    foreach (ManagementObject o in s.Get())
+                    {
+                        string doc = o["Document"] as string;
+                        if (doc == null || doc.IndexOf(key, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        found = true;
+                        string[] js = o["JobStatus"] as string[];
+                        state = js != null && js.Length > 0 ? string.Join(", ", js) : (o["Status"] as string ?? "");
+                    }
+                }
+                if (found)
+                {
+                    seen = true;
+                    if (state != lastState)
+                    {
+                        lastState = state;
+                        changed = DateTime.Now;
+                        bool hardware = IsPrinterProblem(state);
+                        Set(job, hardware ? "waiting" : "printing", hardware ? state : "");
+                    }
+                    if (!IsPrinterProblem(state) && (DateTime.Now - changed).TotalMinutes > 10)
+                        throw new Exception("Stuck in the printer's queue (" + state + "). Check the printer.");
+                }
+                else if (seen) return true; // the spooler finished with the job
+                else if ((DateTime.Now - start).TotalSeconds > 20) return false;
+                Thread.Sleep(500);
+            }
+        }
+
+        static bool IsPrinterProblem(string state)
+        {
+            string s = state.ToLowerInvariant();
+            return s.Contains("offline") || s.Contains("paper") || s.Contains("intervention") || s.Contains("toner")
+                || s.Contains("error") || s.Contains("paused") || s.Contains("blocked") || s.Contains("jam") || s.Contains("not available");
         }
 
         static string ConvertToPdf(string src, string ext)
